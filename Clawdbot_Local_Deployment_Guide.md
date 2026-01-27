@@ -58,6 +58,8 @@ pnpm build
 
 ```bash
 pnpm clawdbot onboard
+
+pnpm clawdbot gateway --verbose
 ```
 
 > **注意**：向导会让你选择云端 provider，可以随便选一个先完成向导，后面会修改为本地模型。
