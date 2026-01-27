@@ -245,9 +245,112 @@ export const providers = {
 
 ---
 
-### 1.4 配置 Clawdbot 使用 Ollama
+### 1.4 修改源码添加 Ollama 环境变量映射（关键步骤！）
 
-#### 1.4.1 打开配置文件目录
+> **为什么需要这一步？** Clawdbot 通过 `model-auth.ts` 中的 `envMap` 映射 provider 到对应的环境变量。默认不包含 ollama，需要手动添加才能识别 `OLLAMA_API_KEY` 环境变量。
+
+#### 1.4.1 找到并编辑 model-auth.ts
+
+**Linux / macOS：**
+
+```bash
+cd /path/to/clawdbot
+
+# 查看原始内容，确认 envMap 位置
+grep -n "envMap" src/agents/model-auth.ts
+
+# 使用 sed 在 venice 后面添加 ollama
+sed -i 's/venice: "VENICE_API_KEY",/venice: "VENICE_API_KEY",\n    ollama: "OLLAMA_API_KEY",/' src/agents/model-auth.ts
+
+# 验证修改是否成功
+grep -n "ollama.*OLLAMA" src/agents/model-auth.ts
+# 应输出类似: 42:    ollama: "OLLAMA_API_KEY",
+```
+
+**macOS（sed 语法略有不同）：**
+
+```bash
+cd /path/to/clawdbot
+
+# macOS 的 sed 需要 -i '' 参数
+sed -i '' 's/venice: "VENICE_API_KEY",/venice: "VENICE_API_KEY",\
+    ollama: "OLLAMA_API_KEY",/' src/agents/model-auth.ts
+
+# 验证修改
+grep -n "ollama.*OLLAMA" src/agents/model-auth.ts
+```
+
+**Windows (PowerShell)：**
+
+```powershell
+cd C:\path\to\clawdbot
+
+# 读取文件内容
+$content = Get-Content -Path "src\agents\model-auth.ts" -Raw
+
+# 替换内容：在 venice 后面添加 ollama
+$newContent = $content -replace 'venice: "VENICE_API_KEY",', "venice: `"VENICE_API_KEY`",`n    ollama: `"OLLAMA_API_KEY`","
+
+# 写回文件
+$newContent | Set-Content -Path "src\agents\model-auth.ts" -NoNewline
+
+# 验证修改
+Select-String -Path "src\agents\model-auth.ts" -Pattern "ollama.*OLLAMA"
+```
+
+**或手动编辑（所有系统通用）：**
+
+1. 打开 `src/agents/model-auth.ts` 文件
+2. 搜索 `envMap` 或 `venice: "VENICE_API_KEY"`
+3. 在 `venice: "VENICE_API_KEY",` 这一行后面添加新行：
+   ```typescript
+       ollama: "OLLAMA_API_KEY",
+   ```
+
+#### 1.4.2 修改前后对比
+
+**修改前：**
+```typescript
+const envMap: Record<string, string> = {
+    anthropic: "ANTHROPIC_API_KEY",
+    openai: "OPENAI_API_KEY",
+    // ... 其他 providers
+    venice: "VENICE_API_KEY",
+};
+```
+
+**修改后：**
+```typescript
+const envMap: Record<string, string> = {
+    anthropic: "ANTHROPIC_API_KEY",
+    openai: "OPENAI_API_KEY",
+    // ... 其他 providers
+    venice: "VENICE_API_KEY",
+    ollama: "OLLAMA_API_KEY",
+};
+```
+
+#### 1.4.3 重新构建项目
+
+修改源码后必须重新构建：
+
+```bash
+# 重新构建
+pnpm build
+
+# 如果 gateway 正在运行，需要重启
+# Linux / macOS
+pkill -f "node.*gateway"
+
+# Windows (PowerShell)
+Get-Process | Where-Object { $_.ProcessName -like "*node*" -and $_.CommandLine -like "*gateway*" } | Stop-Process
+```
+
+---
+
+### 1.5 配置 Clawdbot 使用 Ollama
+
+#### 1.5.1 打开配置文件目录
 
 **Linux / macOS：**
 
@@ -286,7 +389,7 @@ explorer $env:USERPROFILE\.clawdbot
 
 > **Windows 配置文件路径**：`C:\Users\你的用户名\.clawdbot\clawdbot.json`
 
-#### 1.4.2 编辑配置文件
+#### 1.5.2 编辑配置文件
 
 修改 `agents.defaults.model.primary` 字段：
 
@@ -304,7 +407,7 @@ explorer $env:USERPROFILE\.clawdbot
 
 > **提示**：完整配置文件示例请参考 [附录：完整配置文件示例](#附录完整配置文件示例)
 
-#### 1.4.3 或使用配置向导
+#### 1.5.3 或使用配置向导
 
 ```bash
 pnpm clawdbot configure --section gateway
@@ -674,6 +777,7 @@ Get-Content $env:USERPROFILE\.clawdbot\clawdbot.json | ConvertFrom-Json
 | `~/.clawdbot/clawdbot.json` | Clawdbot 主配置文件 |
 | `~/.clawdbot/.env` | 环境变量 |
 | `~/.clawdbot/credentials/` | 凭证存储 |
+| `src/agents/model-auth.ts` | Provider 环境变量映射（需修改添加 ollama） |
 | `models.generated.js` | pi-ai 模型注册 |
 | `/tmp/Modelfile` | Ollama 模型配置 |
 
