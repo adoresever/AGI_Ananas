@@ -1,0 +1,11 @@
+{
+  "owner": "spclaudehome",
+  "slug": "skill-vetter",
+  "displayName": "Skill Vetter",
+  "latest": {
+    "version": "1.0.0",
+    "publishedAt": 1769863429632,
+    "commit": "https://github.com/clawdbot/skills/commit/c563399ea973b60cb63db5ed84e871750e65939a"
+  },
+  "history": []
+}
