@@ -1,0 +1,116 @@
+{
+  "name": "dingtalk",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "OpenClaw/Moltbot DingTalk channel plugin - Stream mode",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yaoyuanchao/openclaw-dingtalk.git"
+  },
+  "files": [
+    "dist",
+    "src",
+    "index.ts",
+    "moltbot.plugin.json",
+    "clawdbot.plugin.json",
+    "openclaw.plugin.json"
+  ],
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "channel": {
+      "id": "dingtalk",
+      "label": "DingTalk",
+      "selectionLabel": "DingTalk (钉钉)",
+      "docsPath": "/channels/dingtalk",
+      "blurb": "钉钉企业消息 Stream 模式",
+      "aliases": [
+        "ding"
+      ],
+      "order": 71
+    },
+    "install": {
+      "npmSpec": "@yaoyuanchao/openclaw-dingtalk",
+      "localPath": ".",
+      "defaultChoice": "npm"
+    }
+  },
+  "moltbot": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "channel": {
+      "id": "dingtalk",
+      "label": "DingTalk",
+      "selectionLabel": "DingTalk (钉钉)",
+      "docsPath": "/channels/dingtalk",
+      "blurb": "钉钉企业消息",
+      "aliases": [
+        "ding"
+      ],
+      "order": 71
+    },
+    "install": {
+      "npmSpec": "@yaoyuanchao/openclaw-dingtalk",
+      "localPath": ".",
+      "defaultChoice": "npm"
+    }
+  },
+  "clawdbot": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "channel": {
+      "id": "dingtalk",
+      "label": "DingTalk",
+      "selectionLabel": "DingTalk (钉钉)",
+      "docsPath": "/channels/dingtalk",
+      "blurb": "钉钉企业消息",
+      "aliases": [
+        "ding"
+      ],
+      "order": 71
+    },
+    "install": {
+      "npmSpec": "@yaoyuanchao/openclaw-dingtalk",
+      "localPath": ".",
+      "defaultChoice": "npm"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest --run",
+    "test:watch": "vitest",
+    "release": "npm run build && npm publish --access public"
+  },
+  "dependencies": {
+    "dingtalk-stream": "^2.1.4",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "fast-check": "^3.22.0",
+    "tsup": "^8.2.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.1.0"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  }
+}

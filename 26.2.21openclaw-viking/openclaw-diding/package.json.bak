@@ -1,0 +1,83 @@
+{
+  "name": "@moltbot-china/dingtalk",
+  "version": "0.1.5",
+  "type": "module",
+  "description": "Moltbot DingTalk channel plugin",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "moltbot.plugin.json",
+    "clawdbot.plugin.json"
+  ],
+  "moltbot": {
+    "extensions": ["./dist/index.js"],
+    "channel": {
+      "id": "dingtalk",
+      "label": "DingTalk",
+      "selectionLabel": "DingTalk (钉钉)",
+      "docsPath": "/channels/dingtalk",
+      "blurb": "钉钉企业消息",
+      "aliases": ["ding"],
+      "order": 71
+    },
+    "install": {
+      "npmSpec": "@moltbot-china/dingtalk",
+      "localPath": ".",
+      "defaultChoice": "npm"
+    }
+  },
+  "clawdbot": {
+    "extensions": ["./dist/index.js"],
+    "channel": {
+      "id": "dingtalk",
+      "label": "DingTalk",
+      "selectionLabel": "DingTalk (钉钉)",
+      "docsPath": "/channels/dingtalk",
+      "blurb": "钉钉企业消息",
+      "aliases": ["ding"],
+      "order": 71
+    },
+    "install": {
+      "npmSpec": "@moltbot-china/dingtalk",
+      "localPath": ".",
+      "defaultChoice": "npm"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest --run",
+    "test:watch": "vitest",
+    "release": "npm run build && npm publish",
+    "release:patch": "npm run build && npm version patch && npm publish",
+    "release:minor": "npm run build && npm version minor && npm publish",
+    "release:major": "npm run build && npm version major && npm publish"
+  },
+  "dependencies": {
+    "dingtalk-stream": "^2.1.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "fast-check": "^3.22.0",
+    "tsup": "^8.2.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0",
+    "zod": "^3.23.0"
+  },
+  "peerDependencies": {
+    "moltbot": ">=0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "moltbot": {
+      "optional": true
+    }
+  }
+}
