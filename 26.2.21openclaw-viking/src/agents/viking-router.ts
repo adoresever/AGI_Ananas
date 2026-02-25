@@ -119,9 +119,7 @@ function buildPackIndex(): string {
 
 function buildSkillIndex(skills: SkillIndexEntry[]): string {
   if (skills.length === 0) return "  (无)";
-  return skills
-    .map((s) => s.description ? `  - ${s.name}: ${s.description}` : `  - ${s.name}`)
-    .join("\n");
+  return skills.map((s) => `  - ${s.name}`).join("\n");
 }
 
 function buildFileIndex(fileNames: string[]): string {
@@ -174,6 +172,7 @@ Rules:
 7. Simple chat: packs=[], files=["SOUL.md","IDENTITY.md","USER.md"].
 8. When unsure: include more packs (cheap). Do NOT leave packs empty if the task needs tools beyond read+exec.`;
 
+  log.info(`[viking] routing prompt chars: ${user.length}`);
   return { system, user };
 }
 

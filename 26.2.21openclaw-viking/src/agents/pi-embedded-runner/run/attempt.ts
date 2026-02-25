@@ -328,23 +328,16 @@ export async function runEmbeddedAttempt(
             params.requireExplicitMessageTarget ?? isSubagentSessionKey(params.sessionKey),
           disableMessageTool: params.disableMessageTool,
         });
+
+        // ===== OpenViking start =====
+        // 实时扫描 skills，不依赖可能过期的 skillsSnapshot
+        const vikingSkillEntries = loadWorkspaceSkillEntries(effectiveWorkspace);
         const vikingSkills: Array<{name: string; description: string}> = [];
-        if (skillEntries && skillEntries.length > 0) {
-          for (const e of skillEntries) {
-            vikingSkills.push({ name: e.skill.name, description: e.skill.description ?? "" });
-          }
-        } else if (params.skillsSnapshot?.resolvedSkills) {
-          for (const s of params.skillsSnapshot.resolvedSkills) {
-            // resolvedSkills 可能有不同的字段名，尝试多种取法
-            const name = (s as any).name ?? (s as any).skill?.name ?? "";
-            const description = (s as any).description ?? (s as any).skill?.description ?? (s as any).promptEntry?.description ?? "";
-            if (name) {
-              vikingSkills.push({ name, description });
-            }
-          }
+        for (const e of vikingSkillEntries) {
+          vikingSkills.push({ name: e.skill.name, description: e.skill.description ?? "" });
         }
-        log.info(`[viking] skills index: ${JSON.stringify(vikingSkills)}`);
-    
+        log.info(`[viking] skills index (${vikingSkills.length}): [${vikingSkills.map(s => s.name).join(", ")}]`);
+
         const vikingFileNames = hookAdjustedBootstrapFiles
           .filter((f) => !f.missing)
           .map((f) => f.name);
@@ -373,8 +366,7 @@ export async function runEmbeddedAttempt(
           routingDecision.skillsMode === "names"
             ? buildSkillNamesOnlyPrompt(vikingSkills)
             : skillsPrompt;
-    // ===== OpenViking end =====
-    log.info(`[viking] skills index: ${JSON.stringify(vikingSkills)}`);
+        // ===== OpenViking end =====
 
     const tools = sanitizeToolsForGoogle({ tools: routedToolsRaw, provider: params.provider });
     logToolSchemasForGoogle({ tools, provider: params.provider });
