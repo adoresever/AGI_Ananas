@@ -371,7 +371,7 @@ export async function runEmbeddedAttempt(
         // 应用路由结果：skills 精简模式
         const routedSkillsPrompt =
           routingDecision.skillsMode === "names"
-            ? buildSkillNamesOnlyPrompt(vikingSkills.map((s) => s.name))
+            ? buildSkillNamesOnlyPrompt(vikingSkills)
             : skillsPrompt;
     // ===== OpenViking end =====
     log.info(`[viking] skills index: ${JSON.stringify(vikingSkills)}`);

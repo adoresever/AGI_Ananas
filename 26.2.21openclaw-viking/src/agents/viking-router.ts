@@ -1,13 +1,11 @@
 /**
- * OpenViking 分层路由器
+ * OpenViking 分层路由器 v2
  *
- * 在 session 创建前，用一次轻量模型调用判断用户意图，
- * 决定需要加载哪些工具 Schema、Bootstrap 文件、System Prompt section。
- *
- * 核心原则：Skills 优先。如果用户意图匹配某个 skill，优先通过 exec 执行 skill，
- * 而不是选择功能相似的内置工具（如 canvas）。
- *
- * 用 fetch 调 OpenAI 兼容 API，通过 ModelRegistry.getApiKey() 获取真实 token。
+ * 设计原则：大道至简
+ * - 工具按"能力包"分类，路由模型做分类选择题
+ * - core（read + exec）永远加载，保证 Agent 基础能力
+ * - Skills 只给名称列表，主模型需要时自己 read SKILL.md
+ * - 路由失败自动回退全量
  *
  * 放置位置: src/agents/viking-router.ts
  */
@@ -20,8 +18,6 @@ import type { PromptMode } from "./system-prompt.ts";
 // ========================
 // 总开关
 // ========================
-// true  = 启用 Viking 分层路由（按需加载工具/文件/prompt）
-// false = 回到原本行为（全量加载所有资源）
 const VIKING_ENABLED = true;
 
 // ========================
@@ -41,11 +37,67 @@ interface AgentToolLike {
   description?: string;
 }
 
-// Skill 索引条目：name + description，从 SKILL.md frontmatter 提取
 export interface SkillIndexEntry {
   name: string;
   description: string;
 }
+
+// ========================
+// 能力包定义
+// ========================
+
+// core：永远加载，不参与选择（~400 tok）
+const CORE_TOOLS = new Set(["read", "exec"]);
+
+// 能力包：路由模型选择
+const TOOL_PACKS: Record<string, { tools: string[]; description: string }> = {
+  "base-ext": {
+    tools: ["write", "edit", "apply_patch", "grep", "find", "ls", "process"],
+    description: "文件编辑、搜索、目录操作、后台进程管理",
+  },
+  "web": {
+    tools: ["web_search", "web_fetch"],
+    description: "搜索互联网、抓取网页内容",
+  },
+  "browser": {
+    tools: ["browser"],
+    description: "控制浏览器打开和操作网页",
+  },
+  "message": {
+    tools: ["message"],
+    description: "发送消息到钉钉、Telegram、Discord等通道",
+  },
+  "media": {
+    tools: ["canvas", "image"],
+    description: "图片生成、画布展示和截图",
+  },
+  "infra": {
+    tools: ["cron", "gateway", "session_status"],
+    description: "定时任务、系统管理、状态查询、提醒",
+  },
+  "agents": {
+    tools: ["agents_list", "sessions_list", "sessions_history", "sessions_send", "sessions_spawn", "subagents"],
+    description: "多Agent协作、子任务派发、会话管理",
+  },
+  "nodes": {
+    tools: ["nodes"],
+    description: "设备控制、摄像头、屏幕操作",
+  },
+};
+
+// ========================
+// 文件描述
+// ========================
+
+const FILE_DESCRIPTIONS: Record<string, string> = {
+  "AGENTS.md": "Agent核心规则：会话流程、安全、模块索引",
+  "SOUL.md": "Agent人格、语气、性格（任何对话都需要）",
+  "TOOLS.md": "本地环境备注（SSH、摄像头、TTS语音等）",
+  "IDENTITY.md": "Agent身份：名字、emoji、头像（任何对话都需要）",
+  "USER.md": "用户信息和偏好（个性化回复需要）",
+  "HEARTBEAT.md": "心跳任务清单",
+  "BOOTSTRAP.md": "首次运行引导（仅首次需要）",
+};
 
 // ========================
 // 判断是否跳过路由
@@ -56,52 +108,26 @@ function shouldSkipRouting(): boolean {
 }
 
 // ========================
-// 从实际工具动态生成索引
+// 构建 L0 索引
 // ========================
 
-function buildToolIndex(tools: AgentToolLike[]): string {
-  return tools
-    .map((t) => {
-      const desc = t.description ? t.description.split(".")[0].trim() : t.name;
-      return `  - ${t.name}: ${desc}`;
-    })
+function buildPackIndex(): string {
+  return Object.entries(TOOL_PACKS)
+    .map(([name, pack]) => `  - ${name}: ${pack.description}`)
     .join("\n");
 }
-
-// ========================
-// 从实际 skills 动态生成索引（带 description）
-// ========================
 
 function buildSkillIndex(skills: SkillIndexEntry[]): string {
-  if (skills.length === 0) return "  (none)";
+  if (skills.length === 0) return "  (无)";
   return skills
-    .map((s) => {
-      if (s.description) {
-        return `  - ${s.name}: ${s.description}`;
-      }
-      return `  - ${s.name}`;
-    })
+    .map((s) => s.description ? `  - ${s.name}: ${s.description}` : `  - ${s.name}`)
     .join("\n");
 }
-
-// ========================
-// 从实际文件动态生成索引（带描述）
-// ========================
-
-const FILE_DESCRIPTIONS: Record<string, string> = {
-  "AGENTS.md": "Agent core rules: session flow, safety, module index",
-  "SOUL.md": "Agent personality, tone, character (needed for any conversation)",
-  "TOOLS.md": "Local environment notes (SSH, cameras, TTS voices)",
-  "IDENTITY.md": "Agent identity: name, emoji, avatar (needed for any conversation)",
-  "USER.md": "User information and preferences (needed for personalized responses)",
-  "HEARTBEAT.md": "Heartbeat task checklist for periodic checks",
-  "BOOTSTRAP.md": "First-run setup guide (only needed on first run)",
-};
 
 function buildFileIndex(fileNames: string[]): string {
   return fileNames
     .map((name) => {
-      const desc = FILE_DESCRIPTIONS[name] ?? "workspace file";
+      const desc = FILE_DESCRIPTIONS[name] ?? "workspace文件";
       return `  - ${name}: ${desc}`;
     })
     .join("\n");
@@ -113,55 +139,51 @@ function buildFileIndex(fileNames: string[]): string {
 
 function buildRoutingPrompt(params: {
   userMessage: string;
-  toolIndex: string;
   fileNames: string[];
   skills: SkillIndexEntry[];
 }): { system: string; user: string } {
-  const system = `You are a resource router. Based on the user message, select which tools and files are needed.
+  const system = `You are a resource router. Select capability packs and files needed for the task.
 Reply with ONLY a JSON object, no other text, no markdown.`;
 
-  const fileIndex = buildFileIndex(params.fileNames);
+  const packIndex = buildPackIndex();
   const skillIndex = buildSkillIndex(params.skills);
+  const fileIndex = buildFileIndex(params.fileNames);
 
   const user = `User message: "${params.userMessage}"
 
-Available tools:
-${params.toolIndex}
+===== Capability Packs (select needed) =====
+Always loaded: read + exec (do not select)
+${packIndex}
 
-Available files:
-${fileIndex}
-
-Available skills (execute via exec tool):
+===== Skills (for reference, all run via exec) =====
 ${skillIndex}
 
-Reply JSON:
-{"tools":["tool names needed"],"files":["file names needed"],"needsFullPrompt":false,"reason":"why"}
+===== Workspace Files (select needed) =====
+${fileIndex}
 
-Rules (in priority order):
-1. SKILLS FIRST: Check if any skill's description or trigger words match the user's task. If yes, include "exec" tool (all skills run via exec). Do NOT use built-in tools (like canvas/browser) when a skill already handles the task.
-2. For ANY conversation (including greetings): include SOUL.md, IDENTITY.md, USER.md
-3. For safety/rules questions: include AGENTS.md
-4. For heartbeat/cron tasks: include HEARTBEAT.md
-5. For first-run setup: include BOOTSTRAP.md
-6. File operations (no matching skill): include read/write/edit/exec
-7. Web search (no matching skill): include web_search/web_fetch
-8. Send messages: include message tool
-9. Memory recall needed: include memory_search/memory_get
-10. Simple chat (greetings/casual/knowledge with no skill match): tools=[]
-11. When unsure about tools, include more rather than fewer
-12. When unsure about files, include fewer rather than more`;
+Reply JSON:
+{"packs":["pack names"],"files":["file names"],"reason":"brief reason"}
+
+Rules:
+1. SKILLS: If the task matches any skill above, no extra pack needed (exec is always loaded). But if the skill also needs web/message/etc, include those packs.
+2. For ANY conversation: include SOUL.md, IDENTITY.md, USER.md.
+3. File editing/coding: include "base-ext".
+4. Web search: include "web".
+5. Send messages/notifications: include "message".
+6. Scheduled tasks/reminders: include "infra".
+7. Simple chat: packs=[], files=["SOUL.md","IDENTITY.md","USER.md"].
+8. When unsure: include more packs (cheap). Do NOT leave packs empty if the task needs tools beyond read+exec.`;
 
   return { system, user };
 }
 
 // ========================
-// 用 fetch 调 OpenAI 兼容 API
+// 调用路由模型
 // ========================
 
 interface RoutingModelResult {
-  tools: string[];
+  packs: string[];
   files: string[];
-  needsFullPrompt: boolean;
 }
 
 async function callRoutingModel(params: {
@@ -170,17 +192,16 @@ async function callRoutingModel(params: {
   provider: string;
   system: string;
   user: string;
-}): Promise<RoutingModelResult> {
+}): Promise<RoutingModelResult | null> {
   try {
     const apiKey = await params.modelRegistry.getApiKey(params.model) ?? "";
-
     const baseUrl = (
       typeof params.model.baseUrl === "string" ? params.model.baseUrl.trim() : ""
     ) || "http://localhost:11434/v1";
     const modelId = params.model.id ?? params.model.name ?? "default";
 
     const url = `${baseUrl}/chat/completions`;
-    log.info(`[viking] routing call: model=${modelId} url=${url} hasKey=${apiKey.length > 0}`);
+    log.info(`[viking] routing call: model=${modelId} url=${url}`);
 
     const response = await fetch(url, {
       method: "POST",
@@ -194,7 +215,7 @@ async function callRoutingModel(params: {
           { role: "system", content: params.system },
           { role: "user", content: params.user },
         ],
-        max_tokens: 300,
+        max_tokens: 150,
         temperature: 0,
         stream: false,
       }),
@@ -203,7 +224,7 @@ async function callRoutingModel(params: {
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
       log.info(`[viking] routing API error ${response.status}: ${errText.slice(0, 200)}`);
-      return { tools: [], files: [], needsFullPrompt: true };
+      return null;
     }
 
     const data = (await response.json()) as {
@@ -215,19 +236,37 @@ async function callRoutingModel(params: {
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       log.info(`[viking] response not JSON, fallback to full`);
-      return { tools: [], files: [], needsFullPrompt: true };
+      return null;
     }
 
     const parsed = JSON.parse(jsonMatch[0]);
     return {
-      tools: Array.isArray(parsed.tools) ? parsed.tools : [],
+      packs: Array.isArray(parsed.packs) ? parsed.packs : [],
       files: Array.isArray(parsed.files) ? parsed.files : [],
-      needsFullPrompt: Boolean(parsed.needsFullPrompt),
     };
   } catch (err) {
     log.info(`[viking] routing call failed, fallback to full: ${String(err)}`);
-    return { tools: [], files: [], needsFullPrompt: true };
+    return null;
   }
+}
+
+// ========================
+// 展开能力包 → 具体工具
+// ========================
+
+function expandPacks(packNames: string[]): Set<string> {
+  const tools = new Set<string>(CORE_TOOLS);
+  for (const name of packNames) {
+    const pack = TOOL_PACKS[name];
+    if (pack) {
+      for (const tool of pack.tools) {
+        tools.add(tool);
+      }
+    } else {
+      log.info(`[viking] unknown pack "${name}", ignored`);
+    }
+  }
+  return tools;
 }
 
 // ========================
@@ -243,21 +282,24 @@ export async function vikingRoute(params: {
   modelRegistry: ModelRegistry;
   provider: string;
 }): Promise<VikingRouteResult> {
-  // 总开关：关闭时回到原本全量行为
+  const allToolNames = new Set(params.tools.map((t) => t.name));
+  const allFileNames = new Set(params.fileNames);
+
+  // 总开关关闭 → 全量
   if (shouldSkipRouting()) {
     return {
-      tools: new Set(params.tools.map((t) => t.name)),
-      files: new Set(params.fileNames),
+      tools: allToolNames,
+      files: allFileNames,
       promptLayer: "full",
       skillsMode: "summaries",
       skipped: true,
     };
   }
 
-  // 空消息：最小资源
+  // 空消息 → 只有 core
   if (!params.prompt || params.prompt.trim().length === 0) {
     return {
-      tools: new Set<string>(),
+      tools: new Set(CORE_TOOLS),
       files: new Set<string>(),
       promptLayer: "L0" as PromptMode,
       skillsMode: "names",
@@ -265,10 +307,9 @@ export async function vikingRoute(params: {
     };
   }
 
-  const toolIndex = buildToolIndex(params.tools);
+  // 构建 L0 prompt 并调用路由模型
   const { system, user } = buildRoutingPrompt({
     userMessage: params.prompt,
-    toolIndex,
     fileNames: params.fileNames,
     skills: params.skills,
   });
@@ -281,49 +322,67 @@ export async function vikingRoute(params: {
     user,
   });
 
-  // AI 判断需要全量 → 降级
-  if (result.needsFullPrompt) {
+  // 路由失败 → 全量（兜底）
+  if (!result) {
     return {
-      tools: new Set(params.tools.map((t) => t.name)),
-      files: new Set(params.fileNames),
+      tools: allToolNames,
+      files: allFileNames,
       promptLayer: "full",
       skillsMode: "summaries",
       skipped: false,
     };
   }
 
-  // 完全由 AI 决定，无硬编码保底
-  const selectedTools = new Set(result.tools);
-  const selectedFiles = new Set(result.files);
+  // 展开能力包（core 永远在）
+  const expandedTools = expandPacks(result.packs);
 
+  // 只保留实际存在的工具
+  const validTools = new Set<string>();
+  for (const t of expandedTools) {
+    if (allToolNames.has(t)) validTools.add(t);
+  }
+  // core 强制保留
+  for (const core of CORE_TOOLS) {
+    if (allToolNames.has(core)) validTools.add(core);
+  }
+
+  // 选中的文件
+  const selectedFiles = new Set(result.files.filter((f) => allFileNames.has(f)));
+
+  // promptLayer
   const promptLayer: PromptMode =
-    selectedTools.size <= 3
+    validTools.size <= 2
       ? ("L0" as PromptMode)
-      : selectedTools.size <= 10
+      : validTools.size <= 12
         ? ("L1" as PromptMode)
         : "full";
 
   log.info(
-    `[viking] routed: tools=[${[...selectedTools].join(",")}] files=[${[...selectedFiles].join(",")}] layer=${promptLayer}`,
+    `[viking] routed: packs=[${result.packs.join(",")}] tools=[${[...validTools].join(",")}] ` +
+    `files=[${[...selectedFiles].join(",")}] layer=${promptLayer}`,
   );
 
   return {
-    tools: selectedTools,
+    tools: validTools,
     files: selectedFiles,
     promptLayer,
-    skillsMode: promptLayer === ("L0" as PromptMode) ? "names" : "summaries",
+    skillsMode: "names",
     skipped: false,
   };
 }
 
 // ========================
-// Skills 名称列表（L0 用）
+// Skills 名称+描述列表（给 attempt.ts 用）
 // ========================
 
-export function buildSkillNamesOnlyPrompt(skillNames: string[]): string {
-  if (skillNames.length === 0) return "";
+export function buildSkillNamesOnlyPrompt(skills: SkillIndexEntry[]): string {
+  if (skills.length === 0) return "";
+  const lines = skills.map((s) =>
+    s.description ? `- ${s.name}: ${s.description}` : `- ${s.name}`
+  );
   return [
     "## Skills",
-    `Available: ${skillNames.join(", ")}. Use \`read\` on the skill's SKILL.md when needed.`,
+    ...lines,
+    `Use \`read\` on the skill's SKILL.md when needed.`,
   ].join("\n");
 }
