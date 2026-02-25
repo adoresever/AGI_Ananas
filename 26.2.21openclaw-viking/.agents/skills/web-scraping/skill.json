@@ -1,0 +1,13 @@
+{
+  "name": "web-scraping",
+  "version": "1.0.0",
+  "description": "Fetch, parse, and extract data from web pages using Node.js built-in fetch",
+  "author": "xpr-agents",
+  "category": "oracle",
+  "tags": ["web", "scraping", "fetch", "html", "extract"],
+  "capabilities": ["web-scraping", "link-extraction"],
+  "tools": ["scrape_url", "extract_links", "scrape_multiple"],
+  "requires": {
+    "env": []
+  }
+}

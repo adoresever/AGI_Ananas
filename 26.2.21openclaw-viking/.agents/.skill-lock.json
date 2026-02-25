@@ -1,0 +1,15 @@
+{
+  "version": 3,
+  "skills": {
+    "web-scraping": {
+      "source": "openclaw/skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/openclaw/skills.git",
+      "skillPath": "skills/paulgnz/xpr-web-scraping/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-02-25T03:07:11.917Z",
+      "updatedAt": "2026-02-25T03:23:09.691Z"
+    }
+  },
+  "dismissed": {}
+}

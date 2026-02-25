@@ -1,0 +1,115 @@
+{
+  "sources": [
+    {
+      "id": "mofcom_announce",
+      "name": "商务部-公告列表",
+      "category": "政府政策",
+      "url": "https://www.mofcom.gov.cn/zcfb/blgg/gg/2025/index.html",
+      "priority": 1,
+      "update_freq": "weekly",
+      "encoding": "utf-8",
+      "auto_relevant": false,
+      "keywords_boost": ["汽车", "二手车", "出口", "新能源", "车辆", "零部件", "整车", "摩托车", "电动", "乘用车", "许可证", "关税"]
+    },
+    {
+      "id": "mofcom_wms",
+      "name": "商务部-外贸司",
+      "category": "政府政策",
+      "url": "http://wms.mofcom.gov.cn/",
+      "priority": 1,
+      "update_freq": "weekly",
+      "encoding": "utf-8",
+      "auto_relevant": false,
+      "keywords_boost": ["汽车", "二手车", "出口", "新能源", "车辆", "零部件", "整车", "摩托车", "电动", "许可证"]
+    },
+    {
+      "id": "customs_notice",
+      "name": "海关总署-公告栏",
+      "category": "政府政策",
+      "url": "http://www.customs.gov.cn/customs/302249/302266/index.html",
+      "priority": 1,
+      "update_freq": "daily",
+      "encoding": "utf-8",
+      "auto_relevant": false,
+      "keywords_boost": ["汽车", "车辆", "关税", "进出口", "检验", "零部件", "新能源", "电动", "乘用车"]
+    },
+    {
+      "id": "sinosure_news",
+      "name": "中国信保-新闻中心",
+      "category": "出口信用险",
+      "url": "https://www.sinosure.com.cn/xwzx/",
+      "priority": 1,
+      "update_freq": "weekly",
+      "encoding": "utf-8",
+      "auto_relevant": true,
+      "keywords_boost": []
+    },
+    {
+      "id": "sinosure_risk",
+      "name": "中国信保-国别风险",
+      "category": "出口信用险",
+      "url": "https://www.sinosure.com.cn/ywjs/gbfx/",
+      "priority": 1,
+      "update_freq": "monthly",
+      "encoding": "utf-8",
+      "auto_relevant": true,
+      "keywords_boost": []
+    },
+    {
+      "id": "cada_trends",
+      "name": "中国汽车流通协会-行业动态",
+      "category": "行业新闻",
+      "url": "https://www.cada.cn/Trends/index_90.html",
+      "priority": 1,
+      "update_freq": "daily",
+      "encoding": "utf-8",
+      "auto_relevant": true,
+      "keywords_boost": []
+    },
+    {
+      "id": "cada_policy",
+      "name": "中国汽车流通协会-政策发布",
+      "category": "行业新闻",
+      "url": "https://www.cada.cn/Trends/index_95.html",
+      "priority": 1,
+      "update_freq": "weekly",
+      "encoding": "utf-8",
+      "auto_relevant": true,
+      "keywords_boost": []
+    },
+    {
+      "id": "caam_news",
+      "name": "中国汽车工业协会",
+      "category": "行业新闻",
+      "url": "http://www.caam.org.cn/news",
+      "priority": 2,
+      "update_freq": "daily",
+      "encoding": "utf-8",
+      "auto_relevant": true,
+      "keywords_boost": []
+    }
+  ],
+  "filter_keywords": [
+    "汽车", "新能源", "电动车", "整车", "零部件", "配件",
+    "出口", "进口", "关税", "贸易壁垒", "反倾销",
+    "二手车", "乘用车", "商用车", "充电", "动力电池",
+    "准入", "认证", "标准", "检验", "合规",
+    "信用保险", "信保", "国别风险", "风险预警",
+    "CKD", "SKD", "KD", "散件",
+    "以旧换新", "报废更新", "车辆购置税"
+  ],
+  "settings": {
+    "request_timeout": 15,
+    "request_delay_min": 2,
+    "request_delay_max": 5,
+    "max_articles_per_source": 20,
+    "max_detail_fetch": 10,
+    "user_agents": [
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15"
+    ]
+  }
+}
