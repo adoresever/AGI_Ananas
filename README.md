@@ -1,4 +1,4 @@
-# AGI_Ananans 🎬
+# AGI_Ananas 🍍🎬
 
 视频教程配套资料库 — 每期视频的部署命令、配置文件、代码片段同步更新于此。
 
@@ -35,4 +35,4 @@
 
 ---
 
-<p align="center">Made with ❤️ by Ananans</p>
+<p align="center">Made with ❤️ by Ananas</p>
