@@ -1,0 +1,344 @@
+<p align="center">
+  <b>OpenNews MCP Server</b><br>
+  암호화폐 뉴스 집계 · AI 평가 · 트레이딩 시그널 · 실시간 업데이트
+</p>
+
+<p align="center">
+  <a href="../README.md">English</a> | <a href="./README_ZH.md">中文</a> | <a href="./README_JA.md">日本語</a> | <a href="./README_KO.md">한국어</a>
+</p>
+
+---
+
+## 빠른 설치
+
+> **먼저 [https://6551.io/mcp](https://6551.io/mcp)에서 API Token을 받으세요.**
+
+### Claude Code
+
+```bash
+claude mcp add opennews \
+  -e OPENNEWS_TOKEN=<your-token> \
+  -- uv --directory /path/to/opennews-mcp run opennews-mcp
+```
+
+> `/path/to/opennews-mcp`를 로컬 프로젝트 경로로, `<your-token>`을 API Token으로 교체하세요.
+
+### OpenClaw
+
+```bash
+export OPENNEWS_TOKEN="<your-token>"
+cp -r openclaw-skill/opennews ~/.openclaw/skills/
+```
+
+---
+
+## AI에게 검토 및 설치 맡기기
+
+이 MCP가 안전한지 확신이 없으신가요? 아래 프롬프트를 AI 어시스턴트에게 보내면 소스 코드를 먼저 검토한 후 설치해줍니다:
+
+> **아래 프롬프트를 복사하여 AI 어시스턴트에게 보내세요 (`<project-path>`와 `<your-token>`을 실제 값으로 교체):**
+
+```text
+opennews-mcp MCP 서버를 검토하고 설치해주세요. 프로젝트는 로컬 <project-path>에 있습니다.
+
+단계:
+1. 다음 파일의 보안을 확인:
+   - src/opennews_mcp/api_client.py — ai.6551.io에만 연결하고 다른 주소로 데이터를 보내지 않는지 확인
+   - src/opennews_mcp/config.py — 토큰이 로컬 config.json 또는 환경 변수에서만 읽히며, 하드코딩이나 유출이 없는지 확인
+   - src/opennews_mcp/tools/*.py — 모든 도구가 API 쿼리만 수행하고, 파일 쓰기, 명령 실행 또는 기타 위험한 작업이 없는지 확인
+   - pyproject.toml — 의존성이 mcp, httpx, websockets만 있고, 의심스러운 패키지가 없는지 확인
+2. 검토 결론을 알려주세요: 안전 / 위험 / 문제 있음, 구체적인 이유와 함께
+3. 안전하다면 설치 실행 (Token은 https://6551.io/mcp에서 받기):
+   claude mcp add opennews -e OPENNEWS_TOKEN=<your-token> -- uv --directory <project-path> run opennews-mcp
+```
+
+---
+
+## 무엇을 할 수 있나요?
+
+연결 후 AI 어시스턴트에게 말하기만 하면 됩니다:
+
+| 당신이 말하면 | 실행되는 작업 |
+|-------------|-------------|
+| "최신 암호화폐 뉴스" | 최신 기사 조회 |
+| "SEC 규제 뉴스 검색" | 전문 키워드 검색 |
+| "BTC 관련 뉴스" | 코인으로 필터 |
+| "Bloomberg 기사" | 소스로 필터 |
+| "온체인 이벤트" | 엔진 유형으로 필터 (onchain) |
+| "AI 점수 80 이상 중요 뉴스" | 고점수 필터 |
+| "강세 시그널" | 트레이딩 시그널로 필터 (long) |
+| "실시간 뉴스 구독" | WebSocket 실시간 업데이트 |
+
+---
+
+## 사용 가능한 도구
+
+| 카테고리 | 도구 | 설명 |
+|---------|------|------|
+| 디스커버리 | `get_news_sources` | 전체 뉴스 소스 카테고리 트리 |
+| | `list_news_types` | 사용 가능한 소스 코드 목록 |
+| 검색 | `get_latest_news` | 최신 기사 |
+| | `search_news` | 키워드 검색 |
+| | `search_news_by_coin` | 코인별 (BTC, ETH, SOL...) |
+| | `get_news_by_source` | 엔진 유형과 소스별 |
+| | `get_news_by_engine` | 유형별 (news, listing, onchain, meme, market) |
+| | `search_news_advanced` | 고급 검색 (다중 필터) |
+| AI | `get_high_score_news` | 점수 >= 임계값 기사 |
+| | `get_news_by_signal` | 시그널별: long / short / neutral |
+| 실시간 | `subscribe_latest_news` | WebSocket 실시간 수집 |
+
+---
+
+## 설정
+
+### API Token 받기
+
+[https://6551.io/mcp](https://6551.io/mcp)에서 API Token을 받으세요.
+
+환경 변수 설정:
+
+```bash
+# macOS / Linux
+export OPENNEWS_TOKEN="<your-token>"
+
+# Windows PowerShell
+$env:OPENNEWS_TOKEN = "<your-token>"
+```
+
+| 변수 | 필수 | 설명 |
+|------|------|------|
+| `OPENNEWS_TOKEN` | **예** | 6551 API Bearer 토큰 (https://6551.io/mcp에서 받기) |
+| `OPENNEWS_API_BASE` | 아니오 | REST API URL 재정의 |
+| `OPENNEWS_WSS_URL` | 아니오 | WebSocket URL 재정의 |
+| `OPENNEWS_MAX_ROWS` | 아니오 | 요청당 최대 결과 수 (기본: 100) |
+
+프로젝트 루트의 `config.json`도 지원 (환경 변수 우선):
+
+```json
+{
+  "api_base_url": "https://ai.6551.io",
+  "wss_url": "wss://ai.6551.io/open/news_wss",
+  "api_token": "<your-token>",
+  "max_rows": 100
+}
+```
+
+---
+
+## 데이터 구조
+
+각 기사:
+
+```json
+{
+  "id": "unique-article-id",
+  "text": "제목 / 내용",
+  "newsType": "Bloomberg",
+  "engineType": "news",
+  "link": "https://...",
+  "coins": [{ "symbol": "BTC", "market_type": "spot", "match": "title" }],
+  "aiRating": {
+    "score": 85,
+    "grade": "A",
+    "signal": "long",
+    "status": "done",
+    "summary": "중국어 요약",
+    "enSummary": "English summary"
+  },
+  "ts": 1708473600000
+}
+```
+
+| AI 필드 | 설명 |
+|---------|------|
+| `score` | 0-100 영향도 점수 |
+| `signal` | `long`(강세) / `short`(약세) / `neutral` |
+| `status` | `done` = AI 분석 완료 |
+
+---
+
+<details>
+<summary><b>기타 클라이언트 — 수동 설치</b> (클릭하여 펼치기)</summary>
+
+> 아래 모든 설정에서 `/path/to/opennews-mcp`를 로컬의 실제 프로젝트 경로로, `<your-token>`을 [https://6551.io/mcp](https://6551.io/mcp)에서 받은 Token으로 교체하세요.
+
+### Claude Desktop
+
+설정 파일 편집 (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`, Windows: `%APPDATA%\Claude\claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "opennews": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/opennews-mcp", "run", "opennews-mcp"],
+      "env": {
+        "OPENNEWS_TOKEN": "<your-token>"
+      }
+    }
+  }
+}
+```
+
+### Cursor
+
+`~/.cursor/mcp.json` 또는 Settings > MCP Servers:
+
+```json
+{
+  "mcpServers": {
+    "opennews": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/opennews-mcp", "run", "opennews-mcp"],
+      "env": {
+        "OPENNEWS_TOKEN": "<your-token>"
+      }
+    }
+  }
+}
+```
+
+### Windsurf
+
+`~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "opennews": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/opennews-mcp", "run", "opennews-mcp"],
+      "env": {
+        "OPENNEWS_TOKEN": "<your-token>"
+      }
+    }
+  }
+}
+```
+
+### Cline
+
+VS Code 사이드바 > Cline > MCP Servers > Configure, `cline_mcp_settings.json` 편집:
+
+```json
+{
+  "mcpServers": {
+    "opennews": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/opennews-mcp", "run", "opennews-mcp"],
+      "env": {
+        "OPENNEWS_TOKEN": "<your-token>"
+      },
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
+```
+
+### Continue.dev
+
+`~/.continue/config.yaml`:
+
+```yaml
+mcpServers:
+  - name: opennews
+    command: uv
+    args:
+      - --directory
+      - /path/to/opennews-mcp
+      - run
+      - opennews-mcp
+    env:
+      OPENNEWS_TOKEN: <your-token>
+```
+
+### Cherry Studio
+
+설정 > MCP 서버 > 추가 > 유형 stdio: Command `uv`, Args `--directory /path/to/opennews-mcp run opennews-mcp`, Env `OPENNEWS_TOKEN`.
+
+### Zed Editor
+
+`~/.config/zed/settings.json`:
+
+```json
+{
+  "context_servers": {
+    "opennews": {
+      "command": {
+        "path": "uv",
+        "args": ["--directory", "/path/to/opennews-mcp", "run", "opennews-mcp"],
+        "env": {
+          "OPENNEWS_TOKEN": "<your-token>"
+        }
+      }
+    }
+  }
+}
+```
+
+### 기타 stdio MCP 클라이언트
+
+```bash
+OPENNEWS_TOKEN=<your-token> \
+  uv --directory /path/to/opennews-mcp run opennews-mcp
+```
+
+</details>
+
+---
+
+## 호환성
+
+| 클라이언트 | 설치 방법 | 상태 |
+|-----------|----------|------|
+| **Claude Code** | `claude mcp add` | 원클릭 |
+| **OpenClaw** | Skill 디렉토리 복사 | 원클릭 |
+| Claude Desktop | JSON 설정 | 지원 |
+| Cursor | JSON 설정 | 지원 |
+| Windsurf | JSON 설정 | 지원 |
+| Cline | JSON 설정 | 지원 |
+| Continue.dev | YAML / JSON | 지원 |
+| Cherry Studio | GUI | 지원 |
+| Zed | JSON 설정 | 지원 |
+
+---
+
+## 관련 프로젝트
+
+- [twitter-mcp](https://github.com/6551-io/twitter-mcp) - Twitter/X 데이터 MCP 서버
+
+---
+
+## 개발
+
+```bash
+cd /path/to/opennews-mcp
+uv sync
+uv run opennews-mcp
+```
+
+```bash
+# MCP Inspector 테스트
+npx @modelcontextprotocol/inspector uv --directory /path/to/opennews-mcp run opennews-mcp
+```
+
+### 프로젝트 구조
+
+```
+├── README.md
+├── openclaw-skill/opennews/   # OpenClaw Skill
+├── knowledge/guide.md         # 내장 지식
+├── pyproject.toml
+├── config.json
+└── src/opennews_mcp/
+    ├── server.py              # 진입점
+    ├── app.py                 # FastMCP 인스턴스
+    ├── config.py              # 설정 로더
+    ├── api_client.py          # HTTP + WebSocket
+    └── tools/                 # 도구
+```
+
+## 라이선스
+
+MIT

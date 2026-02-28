@@ -1,0 +1,20 @@
+[project]
+name = "opennews-mcp"
+version = "0.1.0"
+description = "MCP server for crypto news via 6551 REST/WebSocket API"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp[cli]>=1.25,<2",
+    "httpx>=0.27",
+    "websockets>=13",
+]
+
+[project.scripts]
+opennews-mcp = "opennews_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/opennews_mcp"]

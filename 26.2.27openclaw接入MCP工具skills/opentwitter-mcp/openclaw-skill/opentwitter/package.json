@@ -1,0 +1,6 @@
+{
+  "name": "twitter",
+  "version": "0.1.0",
+  "description": "Twitter/X data skill for 6551 API",
+  "main": "SKILL.md"
+}

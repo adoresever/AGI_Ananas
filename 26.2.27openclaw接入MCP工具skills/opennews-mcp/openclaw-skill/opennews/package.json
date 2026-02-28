@@ -1,0 +1,27 @@
+{
+  "name": "opennews",
+  "version": "0.1.0",
+  "description": "Crypto news search, AI ratings, trading signals, and real-time updates via the OpenNews 6551 API",
+  "author": "0xfaskety",
+  "license": "MIT",
+  "homepage": "https://github.com/0xfaskety/opennews-mcp",
+  "openclaw": {
+    "skills": {
+      "dependencies": {
+        "tools": ["exec", "read"],
+        "binaries": ["curl", "jq"],
+        "envVars": ["OPENNEWS_TOKEN"]
+      }
+    }
+  },
+  "keywords": [
+    "crypto",
+    "news",
+    "bitcoin",
+    "trading",
+    "ai-ratings",
+    "signals",
+    "blockchain",
+    "defi"
+  ]
+}
