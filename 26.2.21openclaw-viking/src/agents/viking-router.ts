@@ -1,10 +1,11 @@
 /**
- * OpenViking 分层路由器 v2
+ * OpenViking 分层路由器 v4
  *
  * 设计原则：大道至简
  * - 工具按"能力包"分类，路由模型做分类选择题
  * - core（read + exec）永远加载，保证 Agent 基础能力
  * - Skills 只给名称列表，主模型需要时自己 read SKILL.md
+ * - 路由模型看到 L0 时间线，判断是否需要加载 L1（指定日期）/L2
  * - 路由失败自动回退全量
  *
  * 放置位置: src/agents/viking-router.ts
@@ -30,6 +31,12 @@ export interface VikingRouteResult {
   promptLayer: PromptMode;
   skillsMode: "names" | "summaries";
   skipped: boolean;
+  /** 是否需要加载 L1 关键决策 */
+  needsL1: boolean;
+  /** 需要加载哪些日期的 L1 决策（空数组 = 不需要） */
+  l1Dates: string[];
+  /** 是否需要加载 L2 完整对话 */
+  needsL2: boolean;
 }
 
 interface AgentToolLike {
@@ -46,10 +53,8 @@ export interface SkillIndexEntry {
 // 能力包定义
 // ========================
 
-// core：永远加载，不参与选择（~400 tok）
 const CORE_TOOLS = new Set(["read", "exec"]);
 
-// 能力包：路由模型选择
 const TOOL_PACKS: Record<string, { tools: string[]; description: string }> = {
   "base-ext": {
     tools: ["write", "edit", "apply_patch", "grep", "find", "ls", "process"],
@@ -108,7 +113,7 @@ function shouldSkipRouting(): boolean {
 }
 
 // ========================
-// 构建 L0 索引
+// 构建索引
 // ========================
 
 function buildPackIndex(): string {
@@ -139,6 +144,7 @@ function buildRoutingPrompt(params: {
   userMessage: string;
   fileNames: string[];
   skills: SkillIndexEntry[];
+  timeline?: string;
 }): { system: string; user: string } {
   const system = `You are a resource router. Select capability packs and files needed for the task.
 Reply with ONLY a JSON object, no other text, no markdown.`;
@@ -147,9 +153,17 @@ Reply with ONLY a JSON object, no other text, no markdown.`;
   const skillIndex = buildSkillIndex(params.skills);
   const fileIndex = buildFileIndex(params.fileNames);
 
+  const timelineSection = params.timeline
+    ? `===== Conversation Timeline (L0) =====
+This is a brief timeline of previous conversations. Each line has a date. Use it to determine if the user is referencing past work, and which dates are relevant.
+${params.timeline}
+
+`
+    : "";
+
   const user = `User message: "${params.userMessage}"
 
-===== Capability Packs (select needed) =====
+${timelineSection}===== Capability Packs (select needed) =====
 Always loaded: read + exec (do not select)
 ${packIndex}
 
@@ -160,7 +174,7 @@ ${skillIndex}
 ${fileIndex}
 
 Reply JSON:
-{"packs":["pack names"],"files":["file names"],"reason":"brief reason"}
+{"packs":["pack names"],"files":["file names"],"needsL1":false,"l1Dates":[],"needsL2":false,"reason":"brief reason"}
 
 Rules:
 1. SKILLS: If the task matches any skill above, no extra pack needed (exec is always loaded). But if the skill also needs web/message/etc, include those packs.
@@ -170,7 +184,10 @@ Rules:
 5. Send messages/notifications: include "message".
 6. Scheduled tasks/reminders: include "infra".
 7. Simple chat: packs=[], files=["SOUL.md","IDENTITY.md","USER.md"].
-8. When unsure: include more packs (cheap). Do NOT leave packs empty if the task needs tools beyond read+exec.`;
+8. When unsure: include more packs (cheap). Do NOT leave packs empty if the task needs tools beyond read+exec.
+9. If the user references previous work shown in the Timeline, set needsL1: true and l1Dates to the relevant dates from the Timeline (format: "YYYY-MM-DD"). Only include dates that appear in the Timeline and are relevant to the user's question.
+10. If the user needs the exact original conversation or full code (e.g., "把完整代码调出来", "看之前的详细对话"), set needsL2: true.
+11. If no Timeline is provided or the user's question is unrelated to past work, set needsL1: false, l1Dates: [], needsL2: false.`;
 
   log.info(`[viking] routing prompt chars: ${user.length}`);
   return { system, user };
@@ -183,6 +200,9 @@ Rules:
 interface RoutingModelResult {
   packs: string[];
   files: string[];
+  needsL1?: boolean;
+  l1Dates?: string[];
+  needsL2?: boolean;
 }
 
 async function callRoutingModel(params: {
@@ -214,7 +234,7 @@ async function callRoutingModel(params: {
           { role: "system", content: params.system },
           { role: "user", content: params.user },
         ],
-        max_tokens: 150,
+        max_tokens: 200,
         temperature: 0,
         stream: false,
       }),
@@ -242,6 +262,9 @@ async function callRoutingModel(params: {
     return {
       packs: Array.isArray(parsed.packs) ? parsed.packs : [],
       files: Array.isArray(parsed.files) ? parsed.files : [],
+      needsL1: parsed.needsL1 === true,
+      l1Dates: Array.isArray(parsed.l1Dates) ? parsed.l1Dates.filter((d: unknown) => typeof d === "string") : [],
+      needsL2: parsed.needsL2 === true,
     };
   } catch (err) {
     log.info(`[viking] routing call failed, fallback to full: ${String(err)}`);
@@ -250,7 +273,7 @@ async function callRoutingModel(params: {
 }
 
 // ========================
-// 展开能力包 → 具体工具
+// 展开能力包
 // ========================
 
 function expandPacks(packNames: string[]): Set<string> {
@@ -280,11 +303,12 @@ export async function vikingRoute(params: {
   model: Model<Api>;
   modelRegistry: ModelRegistry;
   provider: string;
+  /** L0 时间线原始文本，供路由模型判断是否需要 L1/L2 */
+  timeline?: string;
 }): Promise<VikingRouteResult> {
   const allToolNames = new Set(params.tools.map((t) => t.name));
   const allFileNames = new Set(params.fileNames);
 
-  // 总开关关闭 → 全量
   if (shouldSkipRouting()) {
     return {
       tools: allToolNames,
@@ -292,10 +316,12 @@ export async function vikingRoute(params: {
       promptLayer: "full",
       skillsMode: "summaries",
       skipped: true,
+      needsL1: false,
+      l1Dates: [],
+      needsL2: false,
     };
   }
 
-  // 空消息 → 只有 core
   if (!params.prompt || params.prompt.trim().length === 0) {
     return {
       tools: new Set(CORE_TOOLS),
@@ -303,14 +329,17 @@ export async function vikingRoute(params: {
       promptLayer: "L0" as PromptMode,
       skillsMode: "names",
       skipped: false,
+      needsL1: false,
+      l1Dates: [],
+      needsL2: false,
     };
   }
 
-  // 构建 L0 prompt 并调用路由模型
   const { system, user } = buildRoutingPrompt({
     userMessage: params.prompt,
     fileNames: params.fileNames,
     skills: params.skills,
+    timeline: params.timeline,
   });
 
   const result = await callRoutingModel({
@@ -321,7 +350,6 @@ export async function vikingRoute(params: {
     user,
   });
 
-  // 路由失败 → 全量（兜底）
   if (!result) {
     return {
       tools: allToolNames,
@@ -329,26 +357,24 @@ export async function vikingRoute(params: {
       promptLayer: "full",
       skillsMode: "summaries",
       skipped: false,
+      needsL1: false,
+      l1Dates: [],
+      needsL2: false,
     };
   }
 
-  // 展开能力包（core 永远在）
   const expandedTools = expandPacks(result.packs);
 
-  // 只保留实际存在的工具
   const validTools = new Set<string>();
   for (const t of expandedTools) {
     if (allToolNames.has(t)) validTools.add(t);
   }
-  // core 强制保留
   for (const core of CORE_TOOLS) {
     if (allToolNames.has(core)) validTools.add(core);
   }
 
-  // 选中的文件
   const selectedFiles = new Set(result.files.filter((f) => allFileNames.has(f)));
 
-  // promptLayer
   const promptLayer: PromptMode =
     validTools.size <= 2
       ? ("L0" as PromptMode)
@@ -358,7 +384,8 @@ export async function vikingRoute(params: {
 
   log.info(
     `[viking] routed: packs=[${result.packs.join(",")}] tools=[${[...validTools].join(",")}] ` +
-    `files=[${[...selectedFiles].join(",")}] layer=${promptLayer}`,
+    `files=[${[...selectedFiles].join(",")}] layer=${promptLayer} ` +
+    `needsL1=${result.needsL1} l1Dates=[${(result.l1Dates ?? []).join(",")}] needsL2=${result.needsL2}`,
   );
 
   return {
@@ -367,11 +394,14 @@ export async function vikingRoute(params: {
     promptLayer,
     skillsMode: "names",
     skipped: false,
+    needsL1: result.needsL1 ?? false,
+    l1Dates: result.l1Dates ?? [],
+    needsL2: result.needsL2 ?? false,
   };
 }
 
 // ========================
-// Skills 名称+描述列表（给 attempt.ts 用）
+// Skills 名称+描述列表
 // ========================
 
 export function buildSkillNamesOnlyPrompt(skills: SkillIndexEntry[]): string {

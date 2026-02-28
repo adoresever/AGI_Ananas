@@ -23,6 +23,7 @@ import { resolveUserPath } from "../../../utils.js";
 import { normalizeMessageChannel } from "../../../utils/message-channel.js";
 import { isReasoningTagProvider } from "../../../utils/provider-utils.js";
 import { resolveOpenClawAgentDir } from "../../agent-paths.js";
+import { loadL0Timeline, loadL1Decisions, loadL2Session, appendTimelineEntry, maybeTriggerL1Summary, extractTsids, extractTsidsFromL0, resolveSessionIdsFromTsids } from "../../history-index.js";
 import { resolveSessionAgentIds } from "../../agent-scope.js";
 import { createAnthropicPayloadLogger } from "../../anthropic-payload-log.js";
 import { makeBootstrapWarn, resolveBootstrapContextForRun } from "../../bootstrap-files.js";
@@ -341,6 +342,9 @@ export async function runEmbeddedAttempt(
         const vikingFileNames = hookAdjustedBootstrapFiles
           .filter((f) => !f.missing)
           .map((f) => f.name);
+        // ===== L0 时间线加载（始终） start =====
+        const l0Result = await loadL0Timeline({ agentDir });
+        // ===== L0 时间线加载（始终） end =====
         const routingDecision = await vikingRoute({
           prompt: params.prompt,
           tools: toolsRaw,
@@ -349,6 +353,7 @@ export async function runEmbeddedAttempt(
           model: params.model,
           modelRegistry: params.modelRegistry,
           provider: params.provider,
+          timeline: l0Result.rawTimeline || undefined,
         });
         // 应用路由结果：只保留模型选出的工具
         const routedToolsRaw = routingDecision.skipped
@@ -367,6 +372,46 @@ export async function runEmbeddedAttempt(
             ? buildSkillNamesOnlyPrompt(vikingSkills)
             : skillsPrompt;
         // ===== OpenViking end =====
+
+        // ===== L1 按日期按需加载 start =====
+        let l1Prompt = "";
+        if (routingDecision.needsL1 && routingDecision.l1Dates && routingDecision.l1Dates.length > 0) {
+          const l1Result = await loadL1Decisions({ agentDir, dates: routingDecision.l1Dates });
+          if (l1Result.available) {
+            l1Prompt = l1Result.prompt;
+            log.info(`[viking] L1 loaded for dates [${routingDecision.l1Dates.join(",")}]: ${l1Result.prompt.length} chars`);
+          }
+        } else if (routingDecision.needsL1) {
+          const l1Result = await loadL1Decisions({ agentDir });
+          if (l1Result.available) {
+            l1Prompt = l1Result.prompt;
+            log.info(`[viking] L1 loaded (all): ${l1Result.prompt.length} chars`);
+          }
+        }
+        // ===== L1 按日期按需加载 end =====
+
+        // ===== L2 按需加载 start =====
+        let l2Prompt = "";
+        if (routingDecision.needsL2) {
+          // 优先从已加载的 L1 中提取时间戳 ID（更精确）
+          let relevantTsids = l1Prompt ? extractTsids(l1Prompt) : [];
+          // 如果 L1 中没有提取到，从 L0 的 dateTsidMap 回退
+          if (relevantTsids.length === 0 && routingDecision.l1Dates && routingDecision.l1Dates.length > 0) {
+            relevantTsids = extractTsidsFromL0(l0Result, routingDecision.l1Dates);
+          }
+          // 将时间戳 ID 转换为 sessionId
+          const relevantSessionIds = resolveSessionIdsFromTsids(relevantTsids, l0Result.tsidSessionMap);
+          if (relevantSessionIds.length > 0) {
+            const l2Result = await loadL2Session({ agentDir, sessionIds: relevantSessionIds });
+            if (l2Result.available) {
+              l2Prompt = l2Result.prompt;
+              log.info(`[viking] L2 loaded: ${l2Result.loadedSessionIds.length} sessions, ${l2Result.prompt.length} chars`);
+            }
+          } else {
+            log.info(`[viking] L2 requested but no sessionIds resolved from tsids [${relevantTsids.join(",")}]`);
+          }
+        }
+        // ===== L2 按需加载 end =====
 
     const tools = sanitizeToolsForGoogle({ tools: routedToolsRaw, provider: params.provider });
     logToolSchemasForGoogle({ tools, provider: params.provider });
@@ -521,13 +566,26 @@ export async function runEmbeddedAttempt(
         });
         return { mode: runtime.mode, sandboxed: runtime.sandboxed };
       })(),
-      systemPrompt: appendPrompt,
+      systemPrompt: (() => {
+        let sp = appendPrompt;
+        if (l0Result.available) sp += "\n\n" + l0Result.prompt;
+        if (l1Prompt) sp += "\n\n" + l1Prompt;
+        if (l2Prompt) sp += "\n\n" + l2Prompt;
+        return sp;
+      })(),
       bootstrapFiles: hookAdjustedBootstrapFiles,
       injectedFiles: contextFiles,
       skillsPrompt,
       tools,
     });
-    const systemPromptOverride = createSystemPromptOverride(appendPrompt);
+    const finalSystemPrompt = (() => {
+      let sp = appendPrompt;
+      if (l0Result.available) sp += "\n\n" + l0Result.prompt;
+      if (l1Prompt) sp += "\n\n" + l1Prompt;
+      if (l2Prompt) sp += "\n\n" + l2Prompt;
+      return sp;
+    })();
+    const systemPromptOverride = createSystemPromptOverride(finalSystemPrompt);
     const systemPromptText = systemPromptOverride();
 
     const sessionLock = await acquireSessionWriteLock({
@@ -722,9 +780,12 @@ export async function runEmbeddedAttempt(
         const validated = transcriptPolicy.validateAnthropicTurns
           ? validateAnthropicTurns(validatedGemini)
           : validatedGemini;
+        const historyLimit = l0Result.available
+          ? l0Result.recentTurns
+          : getDmHistoryLimitFromSessionKey(params.sessionKey, params.config);
         const truncated = limitHistoryTurns(
           validated,
-          getDmHistoryLimitFromSessionKey(params.sessionKey, params.config),
+          historyLimit,
         );
         // Re-run tool_use/tool_result pairing repair after truncation, since
         // limitHistoryTurns can orphan tool_result blocks by removing the
@@ -1276,6 +1337,38 @@ export async function runEmbeddedAttempt(
           });
       }
 
+        // ===== L0+L1 写入 start =====
+        await appendTimelineEntry({
+          agentDir,
+          sessionKey: params.sessionKey ?? params.sessionId,
+          sessionId: params.sessionId,
+          prompt: params.prompt,
+          assistantTexts: (() => {
+            const texts: string[] = [];
+            try {
+              for (const msg of (activeSession?.messages ?? [])) {
+                if (msg.role === "assistant" && typeof msg.content === "string") {
+                  texts.push(msg.content);
+                }
+              }
+            } catch { /* ignore */ }
+            return texts;
+          })(),
+          toolMetas: [],
+          durationMs: 0,
+          model: params.model,
+          modelRegistry: params.modelRegistry,
+          provider: params.provider,
+        }).catch(err => log.warn(`[history] L0+L1 append failed: ${err}`));
+
+        maybeTriggerL1Summary({
+          agentDir,
+          config: params.config,
+          model: params.model,
+          modelRegistry: params.modelRegistry,
+          provider: params.provider,
+        }).catch(err => log.warn(`[history] L1 trigger failed: ${err}`));
+        // ===== L0+L1 写入 end =====
       return {
         aborted,
         timedOut,
