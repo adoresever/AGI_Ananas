@@ -793,9 +793,70 @@ export async function runEmbeddedAttempt(
         const limited = transcriptPolicy.repairToolUseResultPairing
           ? sanitizeToolUseResultPairing(truncated)
           : truncated;
-        cacheTrace?.recordStage("session:limited", { messages: limited });
-        if (limited.length > 0) {
-          activeSession.agent.replaceMessages(limited);
+
+        // ===== L1 替代历史 tool_result 噪声 start =====
+        // 设计初衷：历史轮次的 tool_result 原始内容噪声太大（npm进度条等）
+        // L1 已经是 LLM 总结的精华（技术方案/结果/报错），直接用它替代历史噪声
+        // 策略：找到最后一轮 user 消息的位置，该位置之前的 toolResult 用 L1 摘要替代
+        const finalMessages: AgentMessage[] = await (async () => {
+          // 找最后一个 user 消息的索引（当前轮起点）
+          let lastUserIdx = -1;
+          for (let i = limited.length - 1; i >= 0; i--) {
+            if (limited[i].role === "user") { lastUserIdx = i; break; }
+          }
+          // 只有一轮或找不到历史轮次，直接返回
+          if (lastUserIdx <= 0) return limited;
+
+          // 从 decisions.md 加载今天的 L1（当前 session 最相关）
+          // 用 l0Result 里的 tsidSessionMap 反查当前 sessionId 对应的 tsid
+          // 简化方案：直接加载今天日期的 L1 决策
+          const today = new Date();
+          const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+          let sessionL1Text = "";
+          try {
+            const sessionL1Result = await loadL1Decisions({ agentDir, dates: [todayStr] });
+            if (sessionL1Result.available) {
+              sessionL1Text = sessionL1Result.prompt;
+            }
+          } catch {
+            // L1 加载失败不影响主流程
+          }
+
+          // 如果没有 L1 可用，fallback：对历史 toolResult 做简单截断压缩
+          if (!sessionL1Text) {
+            return limited.map((msg, idx) => {
+              if (idx >= lastUserIdx || msg.role !== "toolResult") return msg;
+              const raw = Array.isArray(msg.content)
+                ? msg.content.map((b: { type?: string; text?: string }) =>
+                    b.type === "text" ? (b.text ?? "") : "").join("\n")
+                : "";
+              if (raw.length < 500) return msg;
+              const head = raw.slice(0, 300);
+              const tail = raw.slice(-200);
+              return {
+                ...msg,
+                content: [{ type: "text" as const, text: `${head}\n...[已压缩]...\n${tail}` }],
+              };
+            });
+          }
+
+          // 有 L1：把历史部分（lastUserIdx 之前）替换为一条 L1 摘要 user 消息
+          // 保留当前轮（lastUserIdx 开始）的原始消息不变
+          const currentRound = limited.slice(lastUserIdx);
+          const l1SummaryMsg: AgentMessage = {
+            role: "user",
+            content: `[历史对话摘要 - 由系统自动压缩]\n${sessionL1Text}`,
+            timestamp: Date.now(),
+          } as AgentMessage;
+
+          log.info(`[viking] L1 替代历史上下文: 原 ${lastUserIdx} 条消息 → 1 条L1摘要`);
+          return [l1SummaryMsg, ...currentRound];
+        })();
+        // ===== L1 替代历史 tool_result 噪声 end =====
+
+        cacheTrace?.recordStage("session:limited", { messages: finalMessages });
+        if (finalMessages.length > 0) {
+          activeSession.agent.replaceMessages(finalMessages);
         }
       } catch (err) {
         await flushPendingToolResultsAfterIdle({
